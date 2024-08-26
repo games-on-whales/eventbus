@@ -133,6 +133,21 @@ namespace dp {
         }
 
         /**
+         * @brief Register a global event handler that will be called for all events.
+         */
+        [[nodiscard]] handler_registration register_global_handler(
+            std::function<void(std::any)>&& handler) {
+            const void* handle;
+
+            safe_unique_registrations_access([&]() {
+                auto it = global_handlers_.emplace(global_handlers_.end(), handler);
+                handle = static_cast<const void*>(&(it));
+            });
+
+            return {handle, this};
+        }
+
+        /**
          * @brief Fire an event to notify event handlers.
          * @tparam EventType The event type
          * @param evt The event to pass to all event handlers.
@@ -145,6 +160,10 @@ namespace dp {
                          handler_registrations_.equal_range(std::type_index(typeid(EventType)));
                      begin_evt_id != end_evt_id; ++begin_evt_id) {
                     begin_evt_id->second(local_event);
+                }
+                // Call all the registered global handlers
+                for (auto& handler : global_handlers_) {
+                    handler(local_event);
                 }
             });
         }
@@ -196,6 +215,7 @@ namespace dp {
         mutable mutex_type registration_mutex_;
         std::unordered_multimap<std::type_index, std::function<void(std::any)>>
             handler_registrations_;
+        std::vector<std::function<void(std::any)>> global_handlers_;
 
         template <typename Callable>
         void safe_shared_registrations_access(Callable&& callable) {

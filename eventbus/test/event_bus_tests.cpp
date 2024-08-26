@@ -117,6 +117,20 @@ TEST(EventBus, DeregisterWhileDispatching) {
     EXPECT_EQ(evt_bus.handler_count(), 1);
 }
 
+TEST(EventBus, GlobalHandlers) {
+    dp::event_bus evt_bus;
+    event_handler_counter counter;
+    auto registration = evt_bus.register_global_handler([&counter](std::any v) {
+        std::cout << "Global handler: " << v.type().name() << "\n";
+        counter.on_test_event();
+    });
+
+    EXPECT_EQ(counter.get_count(), 0);
+    test_event_type test_event{1, "event message", 32.56};
+    evt_bus.fire_event(test_event);
+    EXPECT_EQ(counter.get_count(), 1);
+}
+
 TEST(EventBus, MultiThreaded) {
     class simple_listener {
         int index_;
