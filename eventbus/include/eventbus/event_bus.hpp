@@ -13,6 +13,7 @@
 #include "detail/function_traits.hpp"
 
 namespace dp {
+    template <class... EventTypes>
     class event_bus;
 
     /**
@@ -22,9 +23,10 @@ namespace dp {
      * constructible for that reason, but there are still some cases where you can run into life
      * time issues.
      */
+    template <class... EventTypes>
     class handler_registration {
         const void* handle_{nullptr};
-        dp::event_bus* event_bus_{nullptr};
+        dp::event_bus<EventTypes...>* event_bus_{nullptr};
 
       public:
         handler_registration(const handler_registration& other) = delete;
@@ -44,13 +46,14 @@ namespace dp {
         void unregister() noexcept;
 
       protected:
-        handler_registration(const void* handle, dp::event_bus* bus);
-        friend class event_bus;
+        handler_registration(const void* handle, dp::event_bus<EventTypes...>* bus);
+        friend class event_bus<EventTypes...>;
     };
 
     /**
      * @brief A central event handler class that connects event handlers with the events.
      */
+    template <class... EventTypes>
     class event_bus {
       public:
         event_bus() = default;
@@ -66,7 +69,7 @@ namespace dp {
         template <typename EventType, typename EventHandler,
                   typename = std::enable_if_t<std::is_invocable_v<EventHandler> ||
                                               std::is_invocable_v<EventHandler, EventType>>>
-        [[nodiscard]] handler_registration register_handler(EventHandler&& handler) {
+        [[nodiscard]] handler_registration<EventTypes...> register_handler(EventHandler&& handler) {
             using traits = detail::function_traits<EventHandler>;
             const auto type_idx = std::type_index(typeid(EventType));
             const void* handle;
@@ -102,8 +105,8 @@ namespace dp {
          * @return A handler_registration instance for the given handler.
          */
         template <typename EventType, typename ClassType, typename MemberFunction>
-        [[nodiscard]] handler_registration register_handler(ClassType* class_instance,
-                                                            MemberFunction&& function) noexcept {
+        [[nodiscard]] handler_registration<EventTypes...> register_handler(
+            ClassType* class_instance, MemberFunction&& function) noexcept {
             using traits = detail::function_traits<MemberFunction>;
             static_assert(std::is_same_v<ClassType, std::decay_t<typename traits::owner_type>>,
                           "Member function pointer must match instance type.");
@@ -135,12 +138,15 @@ namespace dp {
         /**
          * @brief Register a global event handler that will be called for all events.
          */
-        [[nodiscard]] handler_registration register_global_handler(
-            std::function<void(std::any)>&& handler) {
+        template <typename EventHandler>
+        [[nodiscard]] handler_registration<EventTypes...> register_global_handler(
+            EventHandler&& handler) {
             const void* handle;
 
             safe_unique_registrations_access([&]() {
-                auto it = global_handlers_.emplace(global_handlers_.end(), handler);
+                auto it = global_handlers_.emplace(
+                    global_handlers_.end(),
+                    std::forward<EventHandler>(handler));
                 handle = static_cast<const void*>(&(it));
             });
 
@@ -173,7 +179,7 @@ namespace dp {
          * @param registration The registration object returned by register_handler.
          * @return true is handler removal was successful, false otherwise.
          */
-        bool remove_handler(const handler_registration& registration) noexcept {
+        bool remove_handler(const handler_registration<EventTypes...>& registration) noexcept {
             if (!registration.handle()) {
                 return false;
             }
@@ -215,7 +221,7 @@ namespace dp {
         mutable mutex_type registration_mutex_;
         std::unordered_multimap<std::type_index, std::function<void(std::any)>>
             handler_registrations_;
-        std::vector<std::function<void(std::any)>> global_handlers_;
+        std::vector<std::function<void(std::variant<EventTypes...>)>> global_handlers_;
 
         template <typename Callable>
         void safe_shared_registrations_access(Callable&& callable) {
@@ -237,28 +243,40 @@ namespace dp {
         }
     };
 
-    inline const void* handler_registration::handle() const { return handle_; }
+    template <class... EventTypes>
+    inline const void* handler_registration<EventTypes...>::handle() const {
+        return handle_;
+    }
 
-    inline void handler_registration::unregister() noexcept {
+    template <class... EventTypes>
+    inline void handler_registration<EventTypes...>::unregister() noexcept {
         if (event_bus_ && handle_) {
             event_bus_->remove_handler(*this);
             handle_ = nullptr;
         }
     }
 
-    inline handler_registration::handler_registration(const void* handle, dp::event_bus* bus)
+    template <class... EventTypes>
+    inline handler_registration<EventTypes...>::handler_registration(
+        const void* handle, dp::event_bus<EventTypes...>* bus)
         : handle_(handle), event_bus_(bus) {}
 
-    inline handler_registration::handler_registration(handler_registration&& other) noexcept
+    template <class... EventTypes>
+    inline handler_registration<EventTypes...>::handler_registration(
+        handler_registration<EventTypes...>&& other) noexcept
         : handle_(std::exchange(other.handle_, nullptr)),
           event_bus_(std::exchange(other.event_bus_, nullptr)) {}
 
-    inline handler_registration& handler_registration::operator=(
+    template <class... EventTypes>
+    inline handler_registration<EventTypes...>& handler_registration<EventTypes...>::operator=(
         handler_registration&& other) noexcept {
         handle_ = std::exchange(other.handle_, nullptr);
         event_bus_ = std::exchange(other.event_bus_, nullptr);
         return *this;
     }
 
-    inline handler_registration::~handler_registration() { unregister(); }
+    template <class... EventTypes>
+    inline handler_registration<EventTypes...>::~handler_registration() {
+        unregister();
+    }
 }  // namespace dp

@@ -29,7 +29,7 @@ void free_function_callback(const test_event_type& type_event) {
 }
 
 TEST(EventBus, LambdaRegistrationAndDeregistration) {
-    dp::event_bus evt_bus;
+    dp::event_bus<event_handler_counter, test_event_type> evt_bus;
     event_handler_counter counter;
     auto registration =
         evt_bus.register_handler<test_event_type>(&counter, &event_handler_counter::on_test_event);
@@ -74,14 +74,15 @@ TEST(EventBus, LambdaRegistrationAndDeregistration) {
 }
 
 TEST(EventBus, DeregisterWhileDispatching) {
-    dp::event_bus evt_bus;
+    dp::event_bus<event_handler_counter, test_event_type> evt_bus;
     event_handler_counter counter;
     auto registration =
         evt_bus.register_handler<test_event_type>(&counter, &event_handler_counter::on_test_event);
 
     struct deregister_while_dispatch_listener {
-        dp::event_bus* evt_bus{nullptr};
-        std::vector<dp::handler_registration>* registrations{nullptr};
+        dp::event_bus<event_handler_counter, test_event_type>* evt_bus{nullptr};
+        std::vector<dp::handler_registration<event_handler_counter, test_event_type>>*
+            registrations{nullptr};
         void on_event(test_event_type) {
             if (evt_bus && registrations) {
                 std::for_each(registrations->begin(), registrations->end(),
@@ -90,7 +91,7 @@ TEST(EventBus, DeregisterWhileDispatching) {
         }
     };
 
-    std::vector<dp::handler_registration> registrations;
+    std::vector<dp::handler_registration<event_handler_counter, test_event_type>> registrations;
     std::vector<deregister_while_dispatch_listener> listeners;
     for (auto i = 0; i < 20; ++i) {
         deregister_while_dispatch_listener listener;
@@ -118,10 +119,10 @@ TEST(EventBus, DeregisterWhileDispatching) {
 }
 
 TEST(EventBus, GlobalHandlers) {
-    dp::event_bus evt_bus;
+    dp::event_bus<test_event_type> evt_bus;
     event_handler_counter counter;
-    auto registration = evt_bus.register_global_handler([&counter](std::any v) {
-        std::cout << "Global handler: " << v.type().name() << "\n";
+    auto registration = evt_bus.register_global_handler([&counter](auto v) {
+        std::cout << "Global handler: " << "\n";
         counter.on_test_event();
     });
 
@@ -143,7 +144,7 @@ TEST(EventBus, MultiThreaded) {
         }
     };
 
-    dp::event_bus evt_bus;
+    dp::event_bus<event_handler_counter, test_event_type> evt_bus;
     simple_listener listener_one(1);
     simple_listener listener_two(2);
 
@@ -178,7 +179,7 @@ TEST(EventBus, MultiThreaded) {
 }
 
 TEST(EventBus, AutoDeregisterInDtor) {
-    dp::event_bus evt_bus;
+    dp::event_bus<event_handler_counter, test_event_type> evt_bus;
     event_handler_counter counter;
     {
         auto registration = evt_bus.register_handler<test_event_type>(

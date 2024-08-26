@@ -44,4 +44,3 @@ if(EVENTBUS_BUILD_TESTS)
 endif()
 
 add_subdirectory(eventbus)
-add_subdirectory(demo)
