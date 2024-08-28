@@ -1,6 +1,5 @@
 #pragma once
 
-#include <any>
 #include <atomic>
 #include <functional>
 #include <mutex>
@@ -55,6 +54,9 @@ namespace dp {
      */
     template <class... EventTypes>
     class event_bus {
+        using event_handler_arg = std::variant<EventTypes...>;
+        using event_handler_fn = std::function<void(event_handler_arg)>;
+
       public:
         event_bus() = default;
 
@@ -77,16 +79,17 @@ namespace dp {
             if constexpr (traits::arity == 0) {
                 safe_unique_registrations_access([&]() {
                     auto it = handler_registrations_.emplace(
-                        type_idx,
-                        [handler = std::forward<EventHandler>(handler)](auto) { handler(); });
+                        type_idx, [handler = std::forward<EventHandler>(handler)](
+                                      event_handler_arg value) { handler(); });
 
                     handle = static_cast<const void*>(&(it->second));
                 });
             } else {
                 safe_unique_registrations_access([&]() {
                     auto it = handler_registrations_.emplace(
-                        type_idx, [func = std::forward<EventHandler>(handler)](auto value) {
-                            func(std::any_cast<EventType>(value));
+                        type_idx,
+                        [func = std::forward<EventHandler>(handler)](event_handler_arg value) {
+                            func(std::get<EventType>(value));
                         });
 
                     handle = static_cast<const void*>(&(it->second));
@@ -117,16 +120,17 @@ namespace dp {
             if constexpr (traits::arity == 0) {
                 safe_unique_registrations_access([&]() {
                     auto it = handler_registrations_.emplace(
-                        type_idx,
-                        [class_instance, function](auto) { (class_instance->*function)(); });
+                        type_idx, [class_instance, function](event_handler_arg value) {
+                            (class_instance->*function)();
+                        });
 
                     handle = static_cast<const void*>(&(it->second));
                 });
             } else {
                 safe_unique_registrations_access([&]() {
                     auto it = handler_registrations_.emplace(
-                        type_idx, [class_instance, function](auto value) {
-                            (class_instance->*function)(std::any_cast<EventType>(value));
+                        type_idx, [class_instance, function](event_handler_arg value) {
+                            (class_instance->*function)(std::get<EventType>(value));
                         });
 
                     handle = static_cast<const void*>(&(it->second));
@@ -144,9 +148,8 @@ namespace dp {
             const void* handle;
 
             safe_unique_registrations_access([&]() {
-                auto it = global_handlers_.emplace(
-                    global_handlers_.end(),
-                    std::forward<EventHandler>(handler));
+                auto it = global_handlers_.emplace(global_handlers_.end(),
+                                                   std::forward<EventHandler>(handler));
                 handle = static_cast<const void*>(&(it));
             });
 
@@ -219,9 +222,8 @@ namespace dp {
       private:
         using mutex_type = std::shared_mutex;
         mutable mutex_type registration_mutex_;
-        std::unordered_multimap<std::type_index, std::function<void(std::any)>>
-            handler_registrations_;
-        std::vector<std::function<void(std::variant<EventTypes...>)>> global_handlers_;
+        std::unordered_multimap<std::type_index, event_handler_fn> handler_registrations_;
+        std::vector<event_handler_fn> global_handlers_;
 
         template <typename Callable>
         void safe_shared_registrations_access(Callable&& callable) {

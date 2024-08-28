@@ -20,6 +20,8 @@ class event_handler_counter {
 
   public:
     event_handler_counter() = default;
+    event_handler_counter(const event_handler_counter& other)
+        : event_count_(other.event_count_.load()) {};
     [[nodiscard]] unsigned int get_count() const { return event_count_.load(); }
     void on_test_event() { ++event_count_; }
 };
@@ -119,7 +121,7 @@ TEST(EventBus, DeregisterWhileDispatching) {
 }
 
 TEST(EventBus, GlobalHandlers) {
-    dp::event_bus<test_event_type> evt_bus;
+    dp::event_bus<test_event_type, event_handler_counter> evt_bus;
     event_handler_counter counter;
     auto registration = evt_bus.register_global_handler([&counter](auto v) {
         std::cout << "Global handler: " << "\n";
